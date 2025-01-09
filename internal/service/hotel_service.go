@@ -2,17 +2,22 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"github.com/PuerkitoBio/goquery"
 	"liuhuig123demo/conf"
 	"liuhuig123demo/internal/dto"
 	"liuhuig123demo/internal/model"
 	"liuhuig123demo/internal/model/query"
 	"net/http"
+	"strconv"
 	"time"
 )
 
 const consumerTaskCacheKey = "hotel_task_consumer:%s"
+
+const (
+	priceDivClass = "div._1jo4hgw"
+)
 
 type hotelService struct {
 	client *http.Client
@@ -75,11 +80,26 @@ func (srv *hotelService) GetTaskHotelInfos(ctx context.Context, task *dto.Task) 
 	}
 
 	// todo: 解析页面
-
-	var hotelInfos []*dto.Hotel
-	err = json.NewDecoder(resp.Body).Decode(&hotelInfos)
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+	selectors := doc.Find("listing-card-subtitle")
+
+	hotelInfos := make([]*dto.Hotel, 0, len(selectors.Nodes))
+	for _, node := range selectors.Nodes {
+		hotelInfo := &dto.Hotel{}
+		for _, childNode := range node.Attr {
+			switch childNode.Key {
+			case priceDivClass:
+				price, err := strconv.ParseFloat(childNode.Val, 64)
+				if err != nil {
+					continue
+				}
+				hotelInfo.Price = price
+			}
+		}
+		hotelInfos = append(hotelInfos, hotelInfo)
 	}
 	return hotelInfos, nil
 }
